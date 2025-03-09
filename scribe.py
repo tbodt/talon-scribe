@@ -12,7 +12,6 @@ from typing import Iterable, Optional, Sequence
 def convert(samples: Sequence[float]):
     api_key = settings.get('user.elevenlabs_api_key')
     if not api_key:
-        app.notify('no elevenlabs api key!')
         raise Exception('no elevenlabs api key!')
 
     data = flac.encode(samples)
@@ -22,6 +21,7 @@ def convert(samples: Sequence[float]):
             'model_id': 'scribe_v1',
             'tag_audio_events': False,
             'diarize': False,
+            'language_code': settings.get('speech.language'),
         },
         files={
             'file': ('a.flac', data, 'audio/flac'),
@@ -30,9 +30,13 @@ def convert(samples: Sequence[float]):
             'xi-api-key': api_key,
         },
     )
-    print(resp.json())
-    resp.raise_for_status()
-    return resp.json()['text']
+    json = resp.json()
+    if not resp.ok:
+        print(json)
+        raise Exception(f"scribe {resp.status_code}: {json['detail'].get('message', json)}")
+    print(f"{json['language_code']} ({json['language_probability']*100:.2f}%): \"{json['text']}\"")
+    if json['language_code'] != 'eng' and json['text'] == 'none': return '' # common hallucination
+    return json['text']
 
 class ScribeEngine(AbstractEngine):
     name = 'scribe'
@@ -42,7 +46,13 @@ class ScribeEngine(AbstractEngine):
         self.id = 'ScribeEngine'
 
     def _on_audio_frame(self, samples: Sequence[float], ts: float = 0.0, *, pad: bool = False) -> None:
-        text = convert(samples)
+        print(len(samples), ts)
+        try:
+            text = convert(samples)
+        except Exception as e:
+            app.notify(str(e))
+            raise
+
         if text == '': return
         text = text.lower().removesuffix('.').strip()
         words = text.split(' ')
