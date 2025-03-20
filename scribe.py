@@ -92,7 +92,7 @@ mod.setting(
 ctx = Context()
 ctx.matches = '''
 mode: user.scribe
-and not mode: command
+and mode: dictation
 '''
 ctx.settings = {
     'speech.engine': 'scribe',
